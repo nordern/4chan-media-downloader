@@ -1,6 +1,8 @@
 4chan Media Downloader
 ================
 
+![alt tag](http://i.imgur.com/suNh7a5.png)
+
 A simple GUI media downloader for 4chan.
 
 How to use:
