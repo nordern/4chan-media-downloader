@@ -7,7 +7,10 @@ A simple GUI media downloader for 4chan.
 
 How to use:
 
-1. Paste thread address into the URL field.
-2. Specify a title.
-3. Hit Search (this analyzes the URL, grabs the media file links, and creates a directory in a location based on your specifications).
-4. Hit Download (you can track the progress using the progress bar).
+1. Download the .zip file for this project using the green upper right "Clone or download" button.
+2. Download and install Python 3.6.
+3. Extract the .zip, double click 4c-media-downloader.pyw.
+4. Paste thread address into the URL field.
+5. Specify a title.
+6. Hit Search (this analyzes the URL, grabs the media file links, and creates a directory in a location based on your specifications).
+7. Hit Download (you can track the progress using the progress bar).
