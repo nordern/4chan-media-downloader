@@ -1,7 +1,7 @@
 4chan Media Downloader
 ================
 
-![alt tag](http://i.imgur.com/suNh7a5.png)
+![alt tag](http://i.imgur.com/L8NRgyx.png)
 
 A simple 4chan media downloader for Windows.
 
