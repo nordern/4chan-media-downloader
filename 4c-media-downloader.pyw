@@ -1,173 +1,271 @@
-import os, time, urllib, threading, subprocess
-import bs4, requests
-from tkinter import *
-import tkinter.ttk as ttk
+#!/usr/bin/env python3
+
+"""
+Interesting comments about this code
+"""
+
+# per PEP8, all imports go on separate lines -NYT
+import os
+import threading
+import subprocess
+import platform
+from functools import partial
+
+# try python2 tkinter imports, if that fails try python3 -NYT
+try:
+	import Tkinter as tk
+	import ttk
+	from tkMessageBox import showerror
+	from urllib import urlretrieve
+except ImportError:
+	import tkinter as tk
+	from tkinter import ttk
+	from tkinter.messagebox import showerror
+	from urllib.request import urlretrieve
+try:
+	import bs4
+	import requests
+except:
+	# rather than an error message, you could add the code to install these modules
+	# remember to install to user space to allow for systems that require admin for system installation
+	# -NYT
+	tk.Tk().withdraw()
+	showerror("Modules Missing", "This program requires the requests and beautifulsoup modules to run.\n\nRun this command from the command line to install them:\n\n  pip install --user requests bs4")
+	raise
+
 
 # specify preferred download location here
-media_dl_location = "D:\\Downloads\\"
+# Windows filenames must be raw strings -NYT
+media_dl_location = r"D:\Downloads"
 
-root = Tk()
-root.title("4chan Media Downloader")
-root.iconbitmap("favicon.ico")
-root.geometry("500x200")
-root.grid_propagate(False)
-root.resizable(0,0)
+# single source of truth - if you want to make a change to your program you should only need to change one place
+# one way to do that is to store the values in a dictionary: -NYT
+entry_style = dict(
+	bd=0,
+	width=55,
+	bg="#FAFAFA",
+	highlightbackground="#C8C8C8",
+	highlightcolor="#C8C8C8",
+	highlightthickness=1
+	)
 
-# url entry field
-label_url = Label(root, text="URL ", fg="#696969")
-label_url.place(x=10, y=50)
+label_style = dict(fg="#696969")
 
-entry_url = Entry(root, bd=0, width=73, bg="#FAFAFA")
-entry_url.config(highlightbackground="#C8C8C8", highlightcolor="#C8C8C8", highlightthickness=1)
-entry_url.place(x=48, y=50)
-entry_url.focus()
+def open_file(path):
+	"""cross platform file explorer opener"""
+	if platform.system() == "Windows":
+		os.startfile(path)
+	elif platform.system() == "Darwin":
+		subprocess.Popen(["open", path])
+	else:
+		subprocess.Popen(["xdg-open", path])
 
-# title entry field
-label_title = Label(root, text="Title ", fg="#696969")
-label_title.place(x=10, y=80)
+# another way to ssot is to make a subclass that bakes in the defaults -NYT
+class ImageButton(tk.Button):
+	"""a version of a button that includes an icon"""
+	def __init__(self, master, file, **kwargs):
+		self.img = tk.PhotoImage(file=file)
+		self.img = self.img.subsample(1,1)
+		tk.Button.__init__(self, master,
+			image=self.img,
+			bd=0,
+			compound="left",
+			padx=4,
+			pady=4,
+			**kwargs)
 
-entry_title = Entry(root, bd=0, width=73, bg="#FAFAFA")
-entry_title.config(highlightbackground="#C8C8C8", highlightcolor="#C8C8C8", highlightthickness=1)
-entry_title.place(x=48, y=80)
+class StatusLabel(tk.Label):
+	"""we can move the configuration code to the widget itself"""
+	def __init__(self, master=None, **kwargs):
+		tk.Label.__init__(self, master, **kwargs)
 
-# dest entry field
-label_destination = Label(root, text="Dest. ", fg="#696969", height=1)
-label_destination.place(x=10, y=110)
+	def normal(self, text):
+		self.config(text=text, font=("Ebrima", 9), **label_style)
 
-entry_dest = Entry(root, bd=0, width=73, bg="#FAFAFA", fg="black")
-entry_dest.config(highlightbackground="#C8C8C8", highlightcolor="#C8C8C8", highlightthickness=1)
-entry_dest.place(x=48, y=110)
-entry_dest.insert(INSERT, media_dl_location)
+	def error(self, text):
+		self.config(text=text, font=("Ebrima", 9, 'bold'), fg="red")
 
-# context menu
-context_menu = Menu(root, tearoff=0)
-context_menu.add_command(label="Cut")
-context_menu.add_command(label="Copy")
-context_menu.add_command(label="Paste")
+class ButtonFrame(tk.Frame):
+	def __init__(self, master=None, **kwargs):
+		tk.Frame.__init__(self, master, **kwargs)
 
-def show_menu(e):
-    w = e.widget
-    context_menu.entryconfigure("Cut", command=lambda: w.event_generate("<<Cut>>"))
-    context_menu.entryconfigure("Copy", command=lambda: w.event_generate("<<Copy>>"))
-    context_menu.entryconfigure("Paste", command=lambda: w.event_generate("<<Paste>>"))
-    context_menu.tk.call("tk_popup", context_menu, e.x_root, e.y_root)
+		# we will use the pack layout to automatically stack the buttons in -NYT
 
-root.bind_class("Entry", "<Button-3><ButtonRelease-3>", show_menu)
+		search_button = ImageButton(self,
+			file="imgs/magnifying-glass-search-button.png",
+			text="  Search",
+			command=master.start_search_thread)
+		search_button.pack(side=tk.LEFT)
 
-def grab_media_links(chan_url):
-    file_links = []
-    res = requests.get(chan_url)
-    res.raise_for_status()
-    soup = bs4.BeautifulSoup(res.text, "html.parser")
-    elems = soup.findAll("div", attrs={'class': 'fileText'})
-    for div in elems:
-        file_links.append(div.a["href"].replace("//",""))
-    return file_links
+		dl_button = ImageButton(self,
+			file="imgs/download-arrow.png",
+			text="  Download",
+			command=master.start_dl_thread)
+		dl_button.pack(side=tk.LEFT)
 
-def media_loc():    
-    if os.path.exists(str(entry_dest.get()) + str(entry_title.get())):
-        folder_exists_message = Label(root, font=("Ebrima", 9), text="Folder already exists                                                                                     ", fg="#696969")
-        folder_exists_message.place(x=10, y=140)        
-        pass
-    else:
-    	os.makedirs(str(entry_dest.get()) + str(entry_title.get()))
-    
-    media_links = grab_media_links(str(entry_url.get()))
+		open_dest_button = ImageButton(self,
+			file="imgs/file-folder.png",
+			text="  Open",
+			command=master.open_media_dl_loc)
+		open_dest_button.pack(side=tk.LEFT)
 
-    media_links_formatted = ["http://" + x for x in media_links]
-    media_files_number_found = Label(root, font=("Ebrima", 9), text="Found " + str(len(media_links_formatted)) + " media files                                                                                             ", fg="#696969")
-    media_files_number_found.place(x=10, y=140)    
-    
-    file = open(entry_dest.get() + entry_title.get() + "\donwloads.txt", "w")
-    file.write('\n'.join(media_links_formatted))
-    file.close()
+class EntryFrame(tk.Frame):
+	def __init__(self, master=None, **kwargs):
+		tk.Frame.__init__(self, master, padx=5, pady=5, **kwargs)
 
-decorative_progress_bar = ttk.Progressbar(root, orient="horizontal", length=480, mode="determinate")
-decorative_progress_bar.place(x=10, y=170)
+		# We will lay this frame out on a grid, using the grid layout -NYT
 
-label_destination = Label(root, font=("Ebrima", 9), text="Hit Search to find any media files, then Download to grab them ", fg="#696969", height=1)
-label_destination.place(x=10, y=140)
+		# url entry field
+		label_url = tk.Label(self, text="URL ", **label_style)
+		label_url.grid(row=0, column=0)
+		self.url = tk.Entry(self, **entry_style)
+		self.url.grid(row=0, column=1, pady=5)
+		self.url.focus()
 
-def dl_media_files():    
-    max_progress = sum(1 for line in open(entry_dest.get() + entry_title.get() + "\donwloads.txt", "r", encoding='utf-8')) + 1
-    progress_bar = ttk.Progressbar(root, orient="horizontal", length=480, mode="determinate", maximum=max_progress)
-    progress_bar.place(x=10, y=170)
+		# title entry field
+		label_title = tk.Label(self, text="Title ", **label_style)
+		label_title.grid(row=1, column=0)
+		self.title = tk.Entry(self, **entry_style)
+		self.title.grid(row=1, column=1, pady=5)
 
-    entry_url.config(state=DISABLED)
-    entry_title.config(state=DISABLED)
-    entry_dest.config(state=DISABLED)
-    
-    links = open(entry_dest.get() + entry_title.get() + "\donwloads.txt", "r", encoding='utf-8')
+		# dest entry field
+		label_destination = tk.Label(self, text="Dest. ", **label_style)
+		label_destination.grid(row=2, column=0)
+		self.dest = tk.Entry(self, **entry_style)
+		self.dest.grid(row=2, column=1, pady=5)
+		self.dest.insert(tk.INSERT, media_dl_location)
 
-    for link in links:
-        link = link.strip()
-        name = link.rsplit('/', 1)[-1]
-        filename = os.path.join(entry_dest.get() + entry_title.get(), name)
-        if not os.path.isfile(filename):
-            progress_bar.step(1)                
-            try:
-                urllib.request.urlretrieve(link, filename)   	
-            except Exception as inst:
-                print(inst)
-                unknown_error_message = Label(root, font=("Ebrima", 9), text="Encountered unknown error. Continuing.               ", fg="#696969")
-                unknown_error_message.place(x=10, y=140)    
-    
-    progress_bar.stop()
-    entry_url.config(state=NORMAL)
-    entry_title.config(state=NORMAL)
-    entry_dest.config(state=NORMAL)
+	def state(self, state):
+		"""update the state of all the Entry widgets at once"""
+		for entry in (self.url, self.title, self.dest):
+			entry.config(state=state)
 
-    if links:
-        downloading_done_message = Label(root, font=("Ebrima", 9), text="Done                                                                                             ", fg="#696969")
-        downloading_done_message.place(x=10, y=140)    
+class ContextMenu(tk.Menu):
+	def __init__(self, master=None, **kwargs):
+		tk.Menu.__init__(self, master, tearoff=0, **kwargs)
+		# partial is better than lambda. -NYT
+		self.add_command(label="Cut", command=partial(self.run, "<<Cut>>"))
+		self.add_command(label="Copy", command=partial(self.run, "<<Copy>>"))
+		self.add_command(label="Paste", command=partial(self.run, "<<Paste>>"))
 
-        done_download_img.lower()
-        done_status_img.place(x=465, y=135)
+	def run(self, event):
+		self.widget.event_generate(event)
 
-    if os.path.exists(entry_dest.get() + entry_title.get() + "\donwloads.txt"):
-    	links.close()
-    	os.remove(entry_dest.get() + entry_title.get() + "\donwloads.txt")
-    else:
-    	pass
+	def show(self, event):
+		self.widget = event.widget
+		self.tk.call("tk_popup", self, event.x_root, event.y_root)
 
-def start_dl_thread():
-    download = threading.Thread(target=dl_media_files)
-    downloding_message = Label(root, font=("Ebrima", 9), text="Downloading...                                                                                             ", fg="#696969")
-    downloding_message.place(x=10, y=140)
-    download.start()
+class GUI(tk.Frame):
+	def __init__(self, master=None, **kwargs):
+		tk.Frame.__init__(self, master, padx=5, pady=5, **kwargs)
 
-    done_status_img.lower()
-    done_download_img.place(x=465, y=135)
+		context_menu = ContextMenu(self)
+		master.bind_class("Entry", "<Button-3><ButtonRelease-3>", context_menu.show)
 
-def get_media_links():
-	media_links = threading.Thread(target=media_loc)
-	media_links.start()
+		self.file_links = None
 
-def open_media_dl_loc():
-    subprocess.Popen(["explorer", "/select,", entry_dest.get() + entry_title.get()])
+		self.make_ui() # separating this from __init__ sometimes helps to keep things neat -NYT
 
-search_img = PhotoImage(file="magnifying-glass-search-button.png")
-display_search_img = search_img.subsample(1, 1)
-search_button = Button(root, image=display_search_img, text="  Search", bd=0, compound="left", padx=4, pady=4, command=get_media_links)
-search_button.place(x=10, y=11)
+	def make_ui(self):
+		self.buttons = ButtonFrame(self)
+		self.buttons.pack(anchor=tk.W)
 
-dl_img = PhotoImage(file="download-arrow.png")
-display_dl_img = dl_img.subsample(1, 1)
-dl_button = Button(root, image=display_dl_img, text="  Download", bd=0, compound="left", padx=4, pady=4, command=start_dl_thread)
-dl_button.place(x=90, y=11)
+		self.entries = EntryFrame(self)
+		self.entries.pack()
 
-open_dest_img = PhotoImage(file="file-folder.png")
-display_open_dest_img = open_dest_img.subsample(1, 1)
-open_dest_button = Button(root, image=display_open_dest_img, text="  Open", bd=0, compound="left", padx=4, pady=4, command=open_media_dl_loc)
-open_dest_button.place(x=190, y=11)
+		self.status = StatusLabel(self)
+		self.status.normal("Hit Search to find any media files, then Download to grab them ")
+		self.status.pack(anchor=tk.W)
 
-# status img
-done_img = PhotoImage(file="done.png")
-display_done_img = done_img.subsample(1, 1)
-done_status_img = Label(root, image=display_done_img)
+		self.progress = ttk.Progressbar(self,
+			orient="horizontal",
+			length=480,
+			mode="determinate")
+		self.progress.pack()
 
-download_img = PhotoImage(file="downloading.png")
-display_download_img = download_img.subsample(1, 1)
-done_download_img = Label(root, image=display_download_img)
+	def start_search_thread(self):
+		media_links = threading.Thread(target=self.grab_media_links)
+		media_links.start()
 
-root.mainloop()
+	def grab_media_links(self):
+		chan_url = self.entries.url.get().strip()
+		# we modify the exisitng Label, do not make a new one to cover the old one up -NYT
+		self.status.normal("Searching "+chan_url)
+		try:
+			res = requests.get(chan_url)
+			res.raise_for_status()
+		except ValueError:
+			self.status.error("ERROR: invalid URL")
+			return # abort -NYT
+
+		self.file_links = [] # use a self. name so that other methods can access this. -NYT
+		schema = res.url.split('/')[0]
+		soup = bs4.BeautifulSoup(res.text, "html.parser")
+		elems = soup.findAll("div", attrs={'class': 'fileText'})
+		for div in elems:
+			self.file_links.append(schema+div.a["href"])
+		self.status.normal("Found {} links".format(len(self.file_links)))
+
+	def start_dl_thread(self):
+		if self.file_links is None:
+			self.status.error("ERROR: search for links first")
+		elif not self.path():
+			self.status.error("ERROR: No path defined")
+		else:
+			download = threading.Thread(target=self.dl_media_files)
+			download.start()
+
+	def path(self):
+		# tiny little methods are very normal and good.
+		# copy/pasting this snippet would be bad -NYT
+		return os.path.join(self.entries.dest.get(), self.entries.title.get())
+
+	def dl_media_files(self):
+		self.status.normal("Downloading...")
+		self.progress.config(maximum=len(self.file_links))
+		self.progress.stop() # reset previous -NYT
+		self.entries.state(tk.DISABLED)
+
+		# make the dir if needed
+		path = self.path()
+		if not os.path.exists(path):
+			os.makedirs(path)
+
+		for link in self.file_links:
+			name = os.path.split(link)[1]
+			filename = os.path.join(path, name)
+
+			if not os.path.isfile(filename):
+				try:
+					urlretrieve(link, filename)
+				except Exception as inst:
+					print(inst)
+					self.status.normal("Encountered unknown error. Continuing.")
+			self.progress.step(1)
+
+		self.entries.state(tk.NORMAL)
+		self.status.normal("Done")
+
+	def open_media_dl_loc(self):
+		# Since popen does not return an error, the exists check must be done here
+		path = self.path()
+		if not os.path.exists(path):
+			self.status.error("ERROR: path does not exisit")
+		else:
+			open_file(path)
+
+def main():
+	root = tk.Tk()
+	root.title("4chan Media Downloader")
+	try:
+		root.iconbitmap("imgs/favicon.ico")
+	except:
+		# loading an .ico file (Windows icon file) fails on Linux a lot
+		print('icon load failed')
+	window = GUI(root)
+	window.pack()
+	root.resizable(0,0)
+	root.mainloop()
+
+if __name__ == "__main__":
+	main()
