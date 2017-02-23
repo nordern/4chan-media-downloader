@@ -1,9 +1,5 @@
 #!/usr/bin/env python3
 
-"""
-Interesting comments about this code
-"""
-
 # per PEP8, all imports go on separate lines -NYT
 import os
 import threading
