@@ -32,7 +32,7 @@ except:
 
 # specify preferred download location here
 # Windows filenames must be raw strings -NYT
-media_dl_location = r"D:\Downloads"
+media_dl_location = r"C:\Users\{}\Downloads".format(os.getlogin())
 
 # single source of truth - if you want to make a change to your program you should only need to change one place
 # one way to do that is to store the values in a dictionary: -NYT
